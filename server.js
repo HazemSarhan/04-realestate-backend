@@ -27,12 +27,18 @@ import orderRouter from './routes/order.routes.js';
 import requestRouter from './routes/request.tour.routes.js';
 
 app.use(express.json());
+
 app.use(
   cors({
-    origin: 'https://zero4-realestate-frontend.onrender.com', // Frontend URL
-    credentials: true, // Allow cookies
+    origin: [
+      'https://zero4-realestate-frontend.onrender.com',
+      'http://localhost:3001',
+    ],
+    methods: ['GET', 'POST', 'PUT', 'DELETE'],
+    credentials: true,
   })
 );
+
 if (process.env.NODE_ENV !== 'production') {
   app.use(morgan('dev'));
 }
