@@ -27,10 +27,21 @@ import orderRouter from './routes/order.routes.js';
 import requestRouter from './routes/request.tour.routes.js';
 
 app.use(express.json());
+const allowedOrigins = [
+  'https://zero4-realestate-frontend.onrender.com',
+  
+];
+
 app.use(
   cors({
-    origin: 'https://zero4-realestate-frontend.onrender.com', // Frontend URL
-    credentials: true, // Allow cookies
+    origin: function (origin, callback) {
+      if (!origin || allowedOrigins.indexOf(origin) !== -1) {
+        callback(null, true);
+      } else {
+        callback(new Error('Not allowed by CORS'));
+      }
+    },
+    credentials: true,
   })
 );
 
