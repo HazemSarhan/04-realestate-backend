@@ -10,7 +10,6 @@ import fs from "fs";
 import bcrypt from "bcryptjs";
 import crypto from "crypto";
 import { sendEmail } from "../configs/sendgridConfig.js";
-import jwt from 'jsonwebtoken';
 
 export const register = async (req, res) => {
   const { name, email, password, phoneNumber, bio } = req.body;
@@ -125,39 +124,33 @@ export const verifyClientEmail = async (req, res) => {
 
 export const login = async (req, res) => {
   const { email, password } = req.body;
-
-  // التحقق من وجود القيم
   if (!email || !password) {
-    throw new BadRequestError('Please provide all values');
+    throw new BadRequestError("Please provide all values");
   }
 
-  // التحقق من وجود المستخدم
+  // Check if the user already exists
   const user = await prisma.user.findUnique({
-    where: { email },
+    where: {
+      email,
+    },
   });
-  
   if (!user) {
-    throw new UnauthenticatedError('Invalid Credentials');
+    throw new UnauthenticatedError("Invalid Credentials");
   }
 
-  // التحقق من حالة التحقق من البريد الإلكتروني
+  // Check if the email verified
   if (!user.isEmailVerified) {
-    throw new UnauthenticatedError('Please verify your email first');
+    throw new UnauthenticatedError("Please verify your email first");
   }
 
-  // مقارنة كلمة المرور
+  // Comparing password
   const isPasswordCorrect = await bcrypt.compare(password, user.password);
   if (!isPasswordCorrect) {
-    throw new UnauthenticatedError('Invalid Credentials');
+    throw new UnauthenticatedError("Invalid Credentials");
   }
 
-  // إنشاء البيانات الخاصة بالمستخدم في التوكن
   const tokenUser = createTokenUser(user);
-
-  // إضافة الكوكيز للرد
   attachCookiesToResponse({ res, user: tokenUser });
-
-  // إرسال الرد
   res.status(StatusCodes.OK).json({ user: tokenUser });
 };
 
@@ -265,22 +258,4 @@ export const resetPassword = async (req, res) => {
     },
   });
   res.status(StatusCodes.OK).json({ msg: "Password reset successfully" });
-};
-
-
-
-
-export const attachCookiesToResponse = ({ res, user }) => {
-  // إنشاء التوكن
-  const token = jwt.sign({ userId: user.id, name: user.name }, process.env.JWT_SECRET, {
-    expiresIn: '1h',  // توكن صالح لمدة ساعة
-  });
-
-  // إضافة الكوكيز إلى الاستجابة
-  res.cookie('token', token, {
-    httpOnly: true,  // لا يمكن الوصول إلى الكوكيز من JavaScript
-    secure: process.env.NODE_ENV === 'production',  // إرسال الكوكيز عبر HTTPS فقط في الإنتاج
-    sameSite: 'Strict',  // تأكد من إعداد SameSite بشكل صحيح
-    expires: new Date(Date.now() + 3600000),  // صلاحية الكوكيز ساعة واحدة
-  });
 };
