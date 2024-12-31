@@ -29,6 +29,7 @@ import requestRouter from './routes/request.tour.routes.js';
 app.use(express.json());
 const allowedOrigins = [
   'https://zero4-realestate-frontend.onrender.com',
+  'http://localhost:30001'
   
 ];
 
