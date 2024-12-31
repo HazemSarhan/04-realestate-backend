@@ -1,20 +1,21 @@
-import { PrismaClient } from '@prisma/client';
+import { PrismaClient } from "@prisma/client";
 let prisma = new PrismaClient();
-import { StatusCodes } from 'http-status-codes';
-import BadRequestError from '../errors/bad-request.js';
-import UnauthenticatedError from '../errors/unauthenticated.js';
-import { attachCookiesToResponse } from '../utils/jwt.js';
-import createTokenUser from '../utils/createTokenUser.js';
-import cloudinary from '../configs/cloudinaryConfig.js';
-import fs from 'fs';
-import bcrypt from 'bcryptjs';
-import crypto from 'crypto';
-import { sendEmail } from '../configs/sendgridConfig.js';
+import { StatusCodes } from "http-status-codes";
+import BadRequestError from "../errors/bad-request.js";
+import UnauthenticatedError from "../errors/unauthenticated.js";
+import { attachCookiesToResponse } from "../utils/jwt.js";
+import createTokenUser from "../utils/createTokenUser.js";
+import cloudinary from "../configs/cloudinaryConfig.js";
+import fs from "fs";
+import bcrypt from "bcryptjs";
+import crypto from "crypto";
+import { sendEmail } from "../configs/sendgridConfig.js";
+import jwt from 'jsonwebtoken';
 
 export const register = async (req, res) => {
   const { name, email, password, phoneNumber, bio } = req.body;
   if (!name || !email || !password) {
-    throw new BadRequestError('Please provide all values');
+    throw new BadRequestError("Please provide all values");
   }
 
   // Check if the email already exists
@@ -24,7 +25,7 @@ export const register = async (req, res) => {
     },
   });
   if (isEmailExists) {
-    throw new BadRequestError('Email already exists');
+    throw new BadRequestError("Email already exists");
   }
 
   // Check if the phone number already exists
@@ -34,23 +35,20 @@ export const register = async (req, res) => {
     },
   });
   if (isPhoneNumberExists) {
-    throw new BadRequestError('Phone number already exists');
+    throw new BadRequestError("Phone number already exists");
   }
 
   // Set the first registered user as admin
   const isFirstAccount = await prisma.user.count();
-  const role = isFirstAccount === 0 ? 'ADMIN' : 'USER';
+  const role = isFirstAccount === 0 ? "ADMIN" : "USER";
 
   // Uploading image to the cloud
-  let profilePicture = '/uploads/default.jpeg';
+  let profilePicture = "/uploads/default.jpeg";
   if (req.files && req.files.profilePicture) {
-    const result = await cloudinary.uploader.upload(
-      req.files.profilePicture.tempFilePath,
-      {
-        use_filename: true,
-        folder: 'lms-images',
-      }
-    );
+    const result = await cloudinary.uploader.upload(req.files.profilePicture.tempFilePath, {
+      use_filename: true,
+      folder: "lms-images",
+    });
     fs.unlinkSync(req.files.profilePicture.tempFilePath);
     profilePicture = result.secure_url;
   }
@@ -60,13 +58,8 @@ export const register = async (req, res) => {
   const hashedPassword = await bcrypt.hash(password, salt);
 
   // Generate tokens
-  const emailVerificationCode = Math.floor(
-    100000 + Math.random() * 900000
-  ).toString();
-  const hashedEmailToken = crypto
-    .createHash('sha256')
-    .update(emailVerificationCode)
-    .digest('hex');
+  const emailVerificationCode = Math.floor(100000 + Math.random() * 900000).toString();
+  const hashedEmailToken = crypto.createHash("sha256").update(emailVerificationCode).digest("hex");
   const emailTokenExpiration = new Date(Date.now() + 15 * 60 * 1000);
 
   const user = await prisma.user.create({
@@ -84,7 +77,7 @@ export const register = async (req, res) => {
   });
 
   // Send verification email
-  const emailSubject = 'Your Verification Code';
+  const emailSubject = "Your Verification Code";
   const emailBody = `
      <p>Hi ${name},</p>
      <p>Thank you for registering. Please verify your account using the following code:</p>
@@ -94,17 +87,17 @@ export const register = async (req, res) => {
   await sendEmail(user.email, emailSubject, emailBody);
 
   res.status(StatusCodes.CREATED).json({
-    message: 'Verification codes sent to your email and phone number.',
+    message: "Verification codes sent to your email and phone number.",
   });
 };
 
 export const verifyClientEmail = async (req, res) => {
   const { email, token } = req.body;
   if (!email || !token) {
-    throw new BadRequestError('Email and verification token are required');
+    throw new BadRequestError("Email and verification token are required");
   }
   const normalizedEmail = email.toLowerCase();
-  const hashedToken = crypto.createHash('sha256').update(token).digest('hex');
+  const hashedToken = crypto.createHash("sha256").update(token).digest("hex");
 
   const user = await prisma.user.findFirst({
     where: {
@@ -116,7 +109,7 @@ export const verifyClientEmail = async (req, res) => {
     },
   });
   if (!user) {
-    throw new BadRequestError('Invalid or expired token');
+    throw new BadRequestError("Invalid or expired token");
   }
 
   await prisma.user.update({
@@ -127,45 +120,51 @@ export const verifyClientEmail = async (req, res) => {
       emailTokenExpiration: null,
     },
   });
-  res.status(StatusCodes.OK).json({ message: 'Email verified successfully.' });
+  res.status(StatusCodes.OK).json({ message: "Email verified successfully." });
 };
 
 export const login = async (req, res) => {
   const { email, password } = req.body;
+
+  // التحقق من وجود القيم
   if (!email || !password) {
     throw new BadRequestError('Please provide all values');
   }
 
-  // Check if the user already exists
+  // التحقق من وجود المستخدم
   const user = await prisma.user.findUnique({
-    where: {
-      email,
-    },
+    where: { email },
   });
+  
   if (!user) {
     throw new UnauthenticatedError('Invalid Credentials');
   }
 
-  // Check if the email verified
+  // التحقق من حالة التحقق من البريد الإلكتروني
   if (!user.isEmailVerified) {
     throw new UnauthenticatedError('Please verify your email first');
   }
 
-  // Comparing password
+  // مقارنة كلمة المرور
   const isPasswordCorrect = await bcrypt.compare(password, user.password);
   if (!isPasswordCorrect) {
     throw new UnauthenticatedError('Invalid Credentials');
   }
 
+  // إنشاء البيانات الخاصة بالمستخدم في التوكن
   const tokenUser = createTokenUser(user);
+
+  // إضافة الكوكيز للرد
   attachCookiesToResponse({ res, user: tokenUser });
+
+  // إرسال الرد
   res.status(StatusCodes.OK).json({ user: tokenUser });
 };
 
 export const loginWithPhone = async (req, res) => {
   const { phoneNumber, password } = req.body;
   if (!phoneNumber || !password) {
-    throw new BadRequestError('Please provide all values');
+    throw new BadRequestError("Please provide all values");
   }
 
   // Check if the user already exists
@@ -175,13 +174,13 @@ export const loginWithPhone = async (req, res) => {
     },
   });
   if (!user) {
-    throw new UnauthenticatedError('Invalid Credentials');
+    throw new UnauthenticatedError("Invalid Credentials");
   }
 
   // Comparing password
   const isPasswordCorrect = await bcrypt.compare(password, user.password);
   if (!isPasswordCorrect) {
-    throw new UnauthenticatedError('Invalid Credentials');
+    throw new UnauthenticatedError("Invalid Credentials");
   }
 
   const tokenUser = createTokenUser(user);
@@ -190,17 +189,17 @@ export const loginWithPhone = async (req, res) => {
 };
 
 export const logout = async (req, res) => {
-  res.cookie('token', 'logout', {
+  res.cookie("token", "logout", {
     httpOnly: true,
     expires: new Date(Date.now() + 1 * 1000),
   });
-  res.status(StatusCodes.OK).json({ msg: 'User logged out!' });
+  res.status(StatusCodes.OK).json({ msg: "User logged out!" });
 };
 
 export const forgetPassword = async (req, res) => {
   const { email } = req.body;
   if (!email) {
-    throw new BadRequestError('Please provide all values');
+    throw new BadRequestError("Please provide all values");
   }
 
   const user = await prisma.user.findUnique({
@@ -212,13 +211,8 @@ export const forgetPassword = async (req, res) => {
     throw new NotFoundError(`No user found with email: ${email}`);
   }
 
-  const emailVerificationCode = Math.floor(
-    100000 + Math.random() * 900000
-  ).toString();
-  const hashedEmailToken = crypto
-    .createHash('sha256')
-    .update(emailVerificationCode)
-    .digest('hex');
+  const emailVerificationCode = Math.floor(100000 + Math.random() * 900000).toString();
+  const hashedEmailToken = crypto.createHash("sha256").update(emailVerificationCode).digest("hex");
   const emailTokenExpiration = new Date(Date.now() + 15 * 60 * 1000);
 
   await prisma.user.update({
@@ -228,19 +222,19 @@ export const forgetPassword = async (req, res) => {
       emailTokenExpiration,
     },
   });
-  const emailSubject = 'Password Reset Verification Code';
+  const emailSubject = "Password Reset Verification Code";
   const emailBody = `
     <h1>${emailVerificationCode}</h1>
     <p>Enter this verification code to reset your password.</p>
   `;
   await sendEmail(user.email, emailSubject, emailBody);
-  res.status(StatusCodes.OK).json({ msg: 'Email sent successfully' });
+  res.status(StatusCodes.OK).json({ msg: "Email sent successfully" });
 };
 
 export const resetPassword = async (req, res) => {
   const { email, token, newPassword } = req.body;
   if (!email || !token || !newPassword) {
-    throw new BadRequestError('Please provide all values');
+    throw new BadRequestError("Please provide all values");
   }
 
   const user = await prisma.user.findUnique({
@@ -252,13 +246,13 @@ export const resetPassword = async (req, res) => {
     throw new NotFoundError(`No user found with email: ${email}`);
   }
 
-  const hashedToken = crypto.createHash('sha256').update(token).digest('hex');
+  const hashedToken = crypto.createHash("sha256").update(token).digest("hex");
   if (user.emailVerificationToken !== hashedToken) {
-    throw new UnauthenticatedError('Invalid or expired token');
+    throw new UnauthenticatedError("Invalid or expired token");
   }
 
   if (user.emailTokenExpiration < new Date()) {
-    throw new UnauthenticatedError('Token expired');
+    throw new UnauthenticatedError("Token expired");
   }
 
   const hashedPassword = await bcrypt.hash(newPassword, 10);
@@ -270,5 +264,23 @@ export const resetPassword = async (req, res) => {
       emailTokenExpiration: null,
     },
   });
-  res.status(StatusCodes.OK).json({ msg: 'Password reset successfully' });
+  res.status(StatusCodes.OK).json({ msg: "Password reset successfully" });
+};
+
+
+
+
+export const attachCookiesToResponse = ({ res, user }) => {
+  // إنشاء التوكن
+  const token = jwt.sign({ userId: user.id, name: user.name }, process.env.JWT_SECRET, {
+    expiresIn: '1h',  // توكن صالح لمدة ساعة
+  });
+
+  // إضافة الكوكيز إلى الاستجابة
+  res.cookie('token', token, {
+    httpOnly: true,  // لا يمكن الوصول إلى الكوكيز من JavaScript
+    secure: process.env.NODE_ENV === 'production',  // إرسال الكوكيز عبر HTTPS فقط في الإنتاج
+    sameSite: 'Strict',  // تأكد من إعداد SameSite بشكل صحيح
+    expires: new Date(Date.now() + 3600000),  // صلاحية الكوكيز ساعة واحدة
+  });
 };
