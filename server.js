@@ -29,7 +29,7 @@ import requestRouter from './routes/request.tour.routes.js';
 app.use(express.json());
 app.use(
   cors({
-    origin: '*', // Frontend URL
+    origin: 'https://zero4-realestate-frontend.onrender.com', // Frontend URL
     credentials: true, // Allow cookies
   })
 );
